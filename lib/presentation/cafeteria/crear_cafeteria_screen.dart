@@ -24,10 +24,10 @@ class CrearCafeteriaScreen extends StatefulWidget {
 class _CrearCafeteriaScreenState extends State<CrearCafeteriaScreen> {
   final _formKey = GlobalKey<FormState>();
   String? _selectedSchoolId;
-  List<String> _schoolIds = [];
-  late final TextEditingController _schoolNameCtrl;
+  List<Map<String, dynamic>> _schools = [];
+  String? _selectedSchoolName;
   late final TextEditingController _nombreCtrl;
-  String _selectedProviderId = '';
+  String? _selectedProviderId;
   List<Proveedor> _proveedores = [];
   bool _loading = false;
   bool _loadingProviders = false;
@@ -37,11 +37,8 @@ class _CrearCafeteriaScreenState extends State<CrearCafeteriaScreen> {
   void initState() {
     super.initState();
     _selectedSchoolId = widget.cafeteriaExistente?.idColegio;
-    _schoolNameCtrl = TextEditingController(
-      text: ApiService.schoolNameOf(widget.cafeteriaExistente?.idColegio ?? '') ?? '',
-    );
     _nombreCtrl = TextEditingController(text: widget.cafeteriaExistente?.nombreCafeteria ?? '');
-    _selectedProviderId = widget.empresa?.idProveedor ?? widget.cafeteriaExistente?.idProveedor ?? '';
+    _selectedProviderId = widget.empresa?.idProveedor ?? widget.cafeteriaExistente?.idProveedor;
     _loadProveedores();
     _loadSchoolIds();
   }
@@ -49,15 +46,20 @@ class _CrearCafeteriaScreenState extends State<CrearCafeteriaScreen> {
   Future<void> _loadSchoolIds() async {
     setState(() => _loadingSchools = true);
     try {
-      final ids = await ApiService.getSchoolIds();
+      final configs = await ApiService.getSchoolConfigs();
       if (!mounted) return;
       setState(() {
-        _schoolIds = List<String>.from(ids);
-        if ((_selectedSchoolId ?? '').isNotEmpty && !_schoolIds.contains(_selectedSchoolId)) {
-          _schoolIds.insert(0, _selectedSchoolId!);
+        _schools = configs;
+        if ((_selectedSchoolId ?? '').isNotEmpty && !_schools.any((s) => s['id'] == _selectedSchoolId)) {
+          _schools.insert(0, {'id': _selectedSchoolId!, 'schoolName': 'Colegio desconocido'});
         }
-        if ((_selectedSchoolId ?? '').isEmpty && _schoolIds.isNotEmpty) {
-          _selectedSchoolId = _schoolIds.first;
+        if ((_selectedSchoolId ?? '').isEmpty && _schools.isNotEmpty) {
+          _selectedSchoolId = _schools.first['id'] as String;
+          _selectedSchoolName = _schools.first['schoolName'] as String?;
+        }
+        if (_selectedSchoolId != null) {
+          final s = _schools.firstWhere((element) => element['id'] == _selectedSchoolId, orElse: () => {'id': _selectedSchoolId!, 'schoolName': 'Desconocido'});
+          _selectedSchoolName = s['schoolName'] as String?;
         }
       });
     } finally {
@@ -74,8 +76,11 @@ class _CrearCafeteriaScreenState extends State<CrearCafeteriaScreen> {
       if (!mounted) return;
       setState(() {
         _proveedores = providers;
-        if (_selectedProviderId.isNotEmpty && !_proveedores.any((p) => p.idProveedor == _selectedProviderId)) {
-          _selectedProviderId = '';
+        if (_selectedProviderId != null && !_proveedores.any((p) => p.idProveedor == _selectedProviderId)) {
+          _selectedProviderId = _proveedores.isNotEmpty ? _proveedores.first.idProveedor : null;
+        }
+        if (_selectedProviderId == null && _proveedores.isNotEmpty) {
+          _selectedProviderId = _proveedores.first.idProveedor;
         }
       });
     } finally {
@@ -85,7 +90,6 @@ class _CrearCafeteriaScreenState extends State<CrearCafeteriaScreen> {
 
   @override
   void dispose() {
-    _schoolNameCtrl.dispose();
     _nombreCtrl.dispose();
     super.dispose();
   }
@@ -100,15 +104,15 @@ class _CrearCafeteriaScreenState extends State<CrearCafeteriaScreen> {
           idCafeteria: widget.cafeteriaExistente!.idCafeteria,
           schoolId: _selectedSchoolId!.trim(),
           name: _nombreCtrl.text.trim(),
-          providerId: _selectedProviderId,
-          schoolName: _schoolNameCtrl.text.trim(),
+          providerId: _selectedProviderId!,
+          schoolName: _selectedSchoolName?.trim() ?? 'Sin nombre',
         );
       } else {
         await ApiService.crearCafeteria(
           schoolId: _selectedSchoolId!.trim(),
           name: _nombreCtrl.text.trim(),
-          providerId: _selectedProviderId,
-          schoolName: _schoolNameCtrl.text.trim(),
+          providerId: _selectedProviderId!,
+          schoolName: _selectedSchoolName?.trim() ?? 'Sin nombre',
         );
       }
 
@@ -171,7 +175,7 @@ class _CrearCafeteriaScreenState extends State<CrearCafeteriaScreen> {
                     ),
                   ),
                 ],
-                onChanged: _loadingProviders ? null : (v) => setState(() => _selectedProviderId = v ?? ''),
+                onChanged: _loadingProviders ? null : (v) => setState(() => _selectedProviderId = v),
                 validator: (v) => v == null || v.trim().isEmpty ? 'Selecciona una empresa' : null,
               ),
             if (widget.empresa == null) const SizedBox(height: 16),
@@ -180,23 +184,27 @@ class _CrearCafeteriaScreenState extends State<CrearCafeteriaScreen> {
               value: _selectedSchoolId,
               isExpanded: true,
               decoration: InputDecoration(
-                labelText: _loadingSchools ? 'Cargando colegios...' : 'ID colegio *',
+                labelText: _loadingSchools ? 'Cargando colegios...' : 'Colegio *',
                 prefixIcon: const Icon(Icons.school_rounded),
               ),
-              items: _schoolIds
-                  .map((id) => DropdownMenuItem<String>(value: id, child: Text(id)))
+              items: _schools
+                  .map((s) => DropdownMenuItem<String>(
+                        value: s['id'] as String,
+                        child: Text(s['schoolName'] as String? ?? s['id'] as String),
+                      ))
                   .toList(),
-              onChanged: _loadingSchools ? null : (v) => setState(() => _selectedSchoolId = v),
+              onChanged: _loadingSchools
+                  ? null
+                  : (v) {
+                      setState(() {
+                        _selectedSchoolId = v;
+                        if (v != null) {
+                          final s = _schools.firstWhere((e) => e['id'] == v);
+                          _selectedSchoolName = s['schoolName'] as String?;
+                        }
+                      });
+                    },
               validator: (v) => v == null || v.trim().isEmpty ? 'Selecciona un colegio' : null,
-            ),
-            const SizedBox(height: 14),
-            TextFormField(
-              controller: _schoolNameCtrl,
-              decoration: const InputDecoration(
-                labelText: 'Nombre del colegio *',
-                prefixIcon: Icon(Icons.apartment_rounded),
-              ),
-              validator: (v) => v == null || v.trim().isEmpty ? 'Campo requerido' : null,
             ),
             const SizedBox(height: 14),
             TextFormField(

@@ -108,7 +108,7 @@ class _EmpleoCardState extends State<_EmpleoCard> {
         children: [
           // ── Header de la empresa ─────────────────────
           Container(
-            color: AppTheme.primary.withOpacity(0.04),
+            color: AppTheme.cardBg,
             padding: const EdgeInsets.all(16),
             child: Row(
               children: [
@@ -117,7 +117,7 @@ class _EmpleoCardState extends State<_EmpleoCard> {
                   width: 46,
                   height: 46,
                   decoration: BoxDecoration(
-                    color: AppTheme.primary.withOpacity(0.1),
+                    color: AppTheme.accent.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Center(
@@ -126,7 +126,7 @@ class _EmpleoCardState extends State<_EmpleoCard> {
                       style: const TextStyle(
                         fontSize: 20,
                         fontWeight: FontWeight.w700,
-                        color: AppTheme.primary,
+                        color: AppTheme.accent,
                       ),
                     ),
                   ),
@@ -241,9 +241,9 @@ class _EmpleoCardState extends State<_EmpleoCard> {
             child: _expandido && (t.cafeterias?.isNotEmpty ?? false)
                 ? Container(
                     decoration: BoxDecoration(
-                      color: AppTheme.accent.withOpacity(0.05),
-                      border: Border(
-                        top: BorderSide(color: Colors.grey.shade200),
+                      color: AppTheme.accent.withValues(alpha: 0.05),
+                      border: const Border(
+                        top: BorderSide(color: AppTheme.border),
                       ),
                     ),
                     child: Column(
@@ -274,7 +274,7 @@ class _EstadoBadge extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.12),
+        color: color.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(20),
       ),
       child: Row(
@@ -370,7 +370,7 @@ class _CafeteriaRow extends StatelessWidget {
             width: 34,
             height: 34,
             decoration: BoxDecoration(
-              color: AppTheme.accent.withOpacity(0.12),
+              color: AppTheme.accent.withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(8),
             ),
             child: const Icon(Icons.coffee_rounded,
@@ -407,13 +407,13 @@ class _EmptyStateTrabajador extends StatelessWidget {
             Container(
               padding: const EdgeInsets.all(24),
               decoration: BoxDecoration(
-                color: Colors.grey.shade100,
+                color: AppTheme.cardBg,
                 shape: BoxShape.circle,
               ),
               child: Icon(
                 Icons.badge_rounded,
                 size: 48,
-                color: Colors.grey.shade400,
+                color: AppTheme.textSecondary,
               ),
             ),
             const SizedBox(height: 20),

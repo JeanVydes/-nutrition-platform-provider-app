@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:untitled2/presentation/auth/providers/auth_provider.dart';
 import 'package:untitled2/main.dart';
-import 'package:untitled2/presentation/cafeteria/cafeterias_screen.dart';
+import 'package:untitled2/presentation/auth/providers/auth_provider.dart';
 import 'package:untitled2/presentation/empresa/mis_empresas_screen.dart';
 import 'package:untitled2/presentation/trabajador/empresas_como_trabajador_screen.dart';
+import 'package:untitled2/presentation/cafeteria/cafeterias_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -16,236 +16,255 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   int _currentIndex = 0;
 
-  final List<_NavItem> _navItems = const [
-    _NavItem(
-      icon: Icons.business_rounded,
-      activeIcon: Icons.business_rounded,
-      label: 'Mis empresas',
-    ),
-    _NavItem(
-      icon: Icons.badge_outlined,
-      activeIcon: Icons.badge_rounded,
-      label: 'Soy trabajador',
-    ),
-    _NavItem(
-      icon: Icons.coffee_outlined,
-      activeIcon: Icons.coffee_rounded,
-      label: 'Cafeterías',
-    ),
-    _NavItem(
-      icon: Icons.person_outline_rounded,
-      activeIcon: Icons.person_rounded,
-      label: 'Perfil',
-    ),
-  ];
+  late final List<Widget> _tabs;
 
-  final List<Widget> _screens = const [
-    MisEmpresasScreen(isEmbedded: true),
-    EmpresasComoTrabajadorScreen(isEmbedded: true),
-    CafeteriasScreen(isEmbedded: true),
-    _ProfilePlaceholder(),
-  ];
+  @override
+  void initState() {
+    super.initState();
+    _tabs = const [
+      MisEmpresasScreen(isEmbedded: true),
+      EmpresasComoTrabajadorScreen(isEmbedded: true),
+      CafeteriasScreen(isEmbedded: true),
+      _ProfileTab(),
+    ];
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: IndexedStack(
-        index: _currentIndex,
-        children: _screens,
-      ),
-      bottomNavigationBar: _BottomNav(
-        currentIndex: _currentIndex,
-        items: _navItems,
-        onTap: (i) => setState(() => _currentIndex = i),
+      body: _tabs[_currentIndex],
+      bottomNavigationBar: Container(
+        decoration: const BoxDecoration(
+          border: Border(
+            top: BorderSide(color: AppTheme.border, width: 0.5),
+          ),
+        ),
+        child: BottomNavigationBar(
+          currentIndex: _currentIndex,
+          onTap: (i) => setState(() => _currentIndex = i),
+          items: const [
+            BottomNavigationBarItem(
+              icon: Icon(Icons.business_rounded),
+              label: 'Empresas',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.badge_rounded),
+              label: 'Empleos',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.coffee_rounded),
+              label: 'Cafeterías',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.person_rounded),
+              label: 'Perfil',
+            ),
+          ],
+        ),
       ),
     );
   }
 }
 
 // ─────────────────────────────────────────
-// BOTTOM NAV PERSONALIZADO (estilo Instagram)
+// TAB: Perfil
 // ─────────────────────────────────────────
-class _NavItem {
-  final IconData icon;
-  final IconData activeIcon;
-  final String label;
-
-  const _NavItem({
-    required this.icon,
-    required this.activeIcon,
-    required this.label,
-  });
-}
-
-class _BottomNav extends StatelessWidget {
-  final int currentIndex;
-  final List<_NavItem> items;
-  final ValueChanged<int> onTap;
-
-  const _BottomNav({
-    required this.currentIndex,
-    required this.items,
-    required this.onTap,
-  });
+class _ProfileTab extends StatelessWidget {
+  const _ProfileTab();
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        border: Border(
-          top: BorderSide(color: Colors.grey.shade200, width: 1),
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.06),
-            blurRadius: 20,
-            offset: const Offset(0, -4),
+    final auth = context.watch<AuthProvider>();
+    final profile = auth.currentProfile;
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Perfil'),
+        actions: [
+          IconButton(
+            onPressed: () => _confirmLogout(context, auth),
+            icon: const Icon(Icons.logout_rounded),
+            tooltip: 'Cerrar sesión',
           ),
         ],
       ),
-      child: SafeArea(
-        top: false,
-        child: SizedBox(
-          height: 62,
-          child: Row(
-            children: List.generate(items.length, (i) {
-              final isActive = i == currentIndex;
-              final item = items[i];
-              return Expanded(
-                child: GestureDetector(
-                  onTap: () => onTap(i),
-                  behavior: HitTestBehavior.opaque,
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 200),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        AnimatedSwitcher(
-                          duration: const Duration(milliseconds: 200),
-                          child: Icon(
-                            isActive ? item.activeIcon : item.icon,
-                            key: ValueKey(isActive),
-                            size: 24,
-                            color: isActive
-                                ? AppTheme.accent
-                                : AppTheme.textSecondary,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          item.label,
-                          style: TextStyle(
-                            fontSize: 10,
-                            fontWeight: isActive
-                                ? FontWeight.w600
-                                : FontWeight.w400,
-                            color: isActive
-                                ? AppTheme.accent
-                                : AppTheme.textSecondary,
-                            fontFamily: 'Poppins',
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              );
-            }),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// ─────────────────────────────────────────
-// PLACEHOLDER DE PERFIL
-// ─────────────────────────────────────────
-class _ProfilePlaceholder extends StatelessWidget {
-  const _ProfilePlaceholder();
-
-  @override
-  Widget build(BuildContext context) {
-    final auth = Provider.of<AuthProvider>(context);
-    final user = auth.effectiveProfile;
-    final activeAccountId = auth.activeAccountId;
-    
-    return Scaffold(
-      appBar: AppBar(title: const Text('Mi Perfil')),
-      body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
+      body: ListView(
+        padding: const EdgeInsets.all(20),
+        children: [
+          const SizedBox(height: 20),
+          // ── Avatar ──────────────────────────────
+          Center(
+            child: Container(
               width: 80,
               height: 80,
               decoration: BoxDecoration(
                 color: AppTheme.accent.withValues(alpha: 0.15),
                 shape: BoxShape.circle,
               ),
-              child: const Icon(
-                Icons.person_rounded,
-                size: 40,
-                color: AppTheme.accent,
-              ),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              user.nombre,
-              style: Theme.of(context)
-                  .textTheme
-                  .titleLarge
-                  ?.copyWith(fontWeight: FontWeight.w600),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              user.email,
-              style: Theme.of(context)
-                  .textTheme
-                  .bodyMedium
-                  ?.copyWith(color: AppTheme.textSecondary),
-            ),
-            const SizedBox(height: 4),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-              decoration: BoxDecoration(
-                color: AppTheme.accent.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Text(
-                user.rol,
-                style: const TextStyle(
-                  color: AppTheme.accent,
-                  fontSize: 12,
-                  fontWeight: FontWeight.bold,
+              child: Center(
+                child: Text(
+                  _initials(profile),
+                  style: const TextStyle(
+                    fontSize: 28,
+                    fontWeight: FontWeight.w700,
+                    color: AppTheme.accent,
+                  ),
                 ),
               ),
             ),
-            const SizedBox(height: 10),
-            Text(
-              'accountId: $activeAccountId',
-              style: Theme.of(context)
-                  .textTheme
-                  .bodySmall
-                  ?.copyWith(color: AppTheme.textSecondary),
-              textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 16),
+          Center(
+            child: Text(
+              profile?.nombreCompleto ?? 'Usuario',
+              style: const TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.w600,
+                color: AppTheme.textPrimary,
+              ),
             ),
-            const SizedBox(height: 48),
-            ElevatedButton.icon(
-              onPressed: () {
-                Provider.of<AuthProvider>(context, listen: false).logout();
-                Navigator.of(context).pushReplacementNamed('/login');
-              },
-              icon: const Icon(Icons.logout),
-              label: const Text('Cerrar Sesión'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppTheme.danger,
+          ),
+          if (profile?.email != null && profile!.email!.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Center(
+              child: Text(
+                profile.email!,
+                style: const TextStyle(
+                  color: AppTheme.textSecondary,
+                  fontSize: 14,
+                ),
               ),
             ),
           ],
-        ),
+          if (profile?.phone != null && profile!.phone!.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Center(
+              child: Text(
+                profile.phone!,
+                style: const TextStyle(
+                  color: AppTheme.textSecondary,
+                  fontSize: 14,
+                ),
+              ),
+            ),
+          ],
+          const SizedBox(height: 24),
+
+          // ── Info card ───────────────────────────
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _ProfileRow(
+                    icon: Icons.fingerprint_rounded,
+                    label: 'ID',
+                    value: auth.activeAccountId.isNotEmpty
+                        ? '${auth.activeAccountId.substring(0, 8)}...'
+                        : 'N/A',
+                  ),
+                  const Divider(height: 20),
+                  _ProfileRow(
+                    icon: Icons.shield_rounded,
+                    label: 'Roles',
+                    value: profile?.rolLabel ?? 'Sin rol',
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 32),
+
+          // ── Logout ──────────────────────────────
+          SizedBox(
+            width: double.infinity,
+            height: 48,
+            child: OutlinedButton.icon(
+              onPressed: () => _confirmLogout(context, auth),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: AppTheme.danger,
+                side: const BorderSide(color: AppTheme.danger),
+              ),
+              icon: const Icon(Icons.logout_rounded, size: 18),
+              label: const Text('Cerrar sesión'),
+            ),
+          ),
+        ],
       ),
+    );
+  }
+
+  String _initials(dynamic profile) {
+    if (profile == null) return '?';
+    final n = profile.nombres?.toString() ?? '';
+    final a = profile.apellidos?.toString() ?? '';
+    final buffer = StringBuffer();
+    if (n.isNotEmpty) buffer.write(n[0].toUpperCase());
+    if (a.isNotEmpty) buffer.write(a[0].toUpperCase());
+    return buffer.isEmpty ? '?' : buffer.toString();
+  }
+
+  Future<void> _confirmLogout(BuildContext context, AuthProvider auth) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Cerrar sesión'),
+        content: const Text('¿Seguro que deseas cerrar sesión?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancelar'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: TextButton.styleFrom(foregroundColor: AppTheme.danger),
+            child: const Text('Cerrar sesión'),
+          ),
+        ],
+      ),
+    );
+    if (confirm == true) {
+      auth.logout();
+      // Auth gate will automatically redirect to login
+    }
+  }
+}
+
+class _ProfileRow extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String value;
+
+  const _ProfileRow({
+    required this.icon,
+    required this.label,
+    required this.value,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Icon(icon, size: 18, color: AppTheme.textSecondary),
+        const SizedBox(width: 10),
+        Text(
+          label,
+          style: const TextStyle(
+            color: AppTheme.textSecondary,
+            fontSize: 13,
+          ),
+        ),
+        const Spacer(),
+        Text(
+          value,
+          style: const TextStyle(
+            fontWeight: FontWeight.w500,
+            color: AppTheme.textPrimary,
+            fontSize: 13,
+          ),
+        ),
+      ],
     );
   }
 }

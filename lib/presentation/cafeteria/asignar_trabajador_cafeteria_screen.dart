@@ -28,6 +28,7 @@ class _AsignarTrabajadorCafeteriaScreenState extends State<AsignarTrabajadorCafe
   List<Cafeteria> _cafeterias = [];
   List<Trabajador> _trabajadores = [];
   List<AsignacionTrabajador> _asignaciones = [];
+  Map<String, String> _nombresReales = {};
 
   String? _selectedProviderId;
   String? _selectedCafeteriaId;
@@ -90,6 +91,22 @@ class _AsignarTrabajadorCafeteriaScreenState extends State<AsignarTrabajadorCafe
 
     _trabajadores = await ApiService.getTrabajadoresDeEmpresa(_selectedProviderId!);
     _selectedWorkerId = _trabajadores.isNotEmpty ? _trabajadores.first.idTrabajador : null;
+
+    final futures = _trabajadores.map((w) async {
+      try {
+        final datos = await ApiService.getSecurityUserById(w.idAccount);
+        final nombre = datos['primerNombre'] ?? '';
+        final apellido = datos['primerApellido'] ?? '';
+        String fullName = '$nombre $apellido'.trim();
+        if (fullName.isEmpty) {
+          fullName = datos['correo'] ?? datos['celular'] ?? '';
+        }
+        if (fullName.isNotEmpty) {
+          _nombresReales[w.idTrabajador] = fullName;
+        }
+      } catch (_) {}
+    });
+    await Future.wait(futures);
   }
 
   Future<void> _loadAsignaciones() async {
@@ -122,6 +139,12 @@ class _AsignarTrabajadorCafeteriaScreenState extends State<AsignarTrabajadorCafe
       }
     }
     if (worker == null) return 'Trabajador';
+
+    final realName = _nombresReales[workerId];
+    if (realName != null && realName.isNotEmpty) {
+      return '$realName - ${worker.cargoTrabajador ?? "Sin cargo"}';
+    }
+
     if ((worker.cargoTrabajador ?? '').trim().isNotEmpty) return worker.cargoTrabajador!;
     return 'Trabajador';
   }
@@ -219,6 +242,15 @@ class _AsignarTrabajadorCafeteriaScreenState extends State<AsignarTrabajadorCafe
   @override
   Widget build(BuildContext context) {
     final cafeteriaActual = _cafeteriaSeleccionada;
+    final providerValue = _selectedProviderId != null && _empresas.any((e) => e.idProveedor == _selectedProviderId)
+      ? _selectedProviderId
+      : null;
+    final cafeteriaValue = _selectedCafeteriaId != null && _cafeterias.any((c) => c.idCafeteria == _selectedCafeteriaId)
+      ? _selectedCafeteriaId
+      : null;
+    final workerValue = _selectedWorkerId != null && _trabajadores.any((w) => w.idTrabajador == _selectedWorkerId)
+      ? _selectedWorkerId
+      : null;
 
     return Scaffold(
       appBar: AppBar(title: const Text('Asignar trabajador')),
@@ -229,7 +261,7 @@ class _AsignarTrabajadorCafeteriaScreenState extends State<AsignarTrabajadorCafe
               children: [
                 if (widget.empresa == null) ...[
                   DropdownButtonFormField<String>(
-                    value: _selectedProviderId,
+                    value: providerValue,
                     decoration: const InputDecoration(
                       labelText: 'Empresa / proveedor *',
                       prefixIcon: Icon(Icons.business_rounded),
@@ -256,7 +288,7 @@ class _AsignarTrabajadorCafeteriaScreenState extends State<AsignarTrabajadorCafe
                   const SizedBox(height: 14),
                 ],
                 DropdownButtonFormField<String>(
-                  value: _selectedCafeteriaId,
+                  value: cafeteriaValue,
                   decoration: const InputDecoration(
                     labelText: 'Cafetería *',
                     prefixIcon: Icon(Icons.coffee_rounded),
@@ -284,7 +316,7 @@ class _AsignarTrabajadorCafeteriaScreenState extends State<AsignarTrabajadorCafe
                   ),
                 const SizedBox(height: 14),
                 DropdownButtonFormField<String>(
-                  value: _selectedWorkerId,
+                  value: workerValue,
                   decoration: const InputDecoration(
                     labelText: 'Trabajador *',
                     prefixIcon: Icon(Icons.person_outline_rounded),

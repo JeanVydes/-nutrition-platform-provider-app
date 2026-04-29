@@ -1,14 +1,24 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:untitled2/core/constants/env.dart';
 import 'package:untitled2/domain/model/user_profile.dart';
 import 'package:untitled2/domain/model/models.dart';
 
 class ApiService {
-  static final List<Cafeteria> _mockCafeterias = [];
-  static final List<AsignacionTrabajador> _mockAssignments = [];
   static final Map<String, String> _schoolNames = {};
-  static List<String> _schoolIdsCache = const [];
+  static String? _accessToken;
+
+  /// Set by AuthProvider to handle 401 responses globally.
+  static VoidCallback? on401;
+
+  /// Call after every authenticated request. If 401, clears token and fires callback.
+  static void _checkAuth(http.Response response) {
+    if (response.statusCode == 401) {
+      clearAccessToken();
+      on401?.call();
+    }
+  }
 
   static final RegExp _uuidRegex = RegExp(
     r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$',
@@ -18,17 +28,41 @@ class ApiService {
     return Uri.parse('${Env.baseUrl}$path').replace(queryParameters: query);
   }
 
-  static Map<String, String> _headers({bool withAuth = true}) {
-    final headers = <String, String>{'Content-Type': 'application/json'};
-    if (withAuth) {
-      headers['Authorization'] = 'Bearer ${Env.accessToken}';
+  static Uri _securityUri(String path) {
+    return Uri.parse('${Env.securityBaseUrl}$path');
+  }
+
+  static Map<String, String> _headers({bool withAuth = true, bool hasBody = true}) {
+    final headers = <String, String>{};
+    if (hasBody) {
+      headers['Content-Type'] = 'application/json';
+    }
+    if (withAuth && _accessToken != null && _accessToken!.trim().isNotEmpty) {
+      headers['Authorization'] = 'Bearer $_accessToken';
     }
     return headers;
   }
 
+  static void setAccessToken(String token) {
+    final t = token.trim();
+    if (t.toLowerCase().startsWith('bearer ')) {
+      _accessToken = t.substring(7).trim();
+    } else {
+      _accessToken = t;
+    }
+  }
+
+  static void clearAccessToken() {
+    _accessToken = null;
+  }
+
   static String _extractMessage(http.Response response) {
+    _checkAuth(response);
     try {
       final body = json.decode(response.body);
+      if (body is Map && body['mensaje'] != null) {
+        return body['mensaje'].toString();
+      }
       if (body is Map && body['message'] != null) {
         return body['message'].toString();
       }
@@ -51,12 +85,6 @@ class ApiService {
 
   static bool _isValidUuid(String value) => _uuidRegex.hasMatch(value);
 
-  static String _generateMockUuid() {
-    final now = DateTime.now().microsecondsSinceEpoch.toRadixString(16).padLeft(32, '0');
-    final seed = now.substring(now.length - 32);
-    return '${seed.substring(0, 8)}-${seed.substring(8, 12)}-4${seed.substring(13, 16)}-8${seed.substring(17, 20)}-${seed.substring(20, 32)}';
-  }
-
   static void cacheSchoolName(String schoolId, String? schoolName) {
     final id = schoolId.trim();
     final name = schoolName?.trim() ?? '';
@@ -70,26 +98,26 @@ class ApiService {
     return name;
   }
 
-  static Future<List<String>> getSchoolIds() async {
+  static Future<List<Map<String, dynamic>>> getSchoolConfigs() async {
     final response = await http.get(
-      _uri('/school-configs/school-ids'),
+      _uri('/school-configs'),
       headers: _headers(),
     );
 
     if (response.statusCode != 200) {
-      if (_schoolIdsCache.isNotEmpty) return List<String>.from(_schoolIdsCache);
       throw Exception(_extractMessage(response));
     }
 
     final decoded = json.decode(response.body);
     if (decoded is! List) {
-      if (_schoolIdsCache.isNotEmpty) return List<String>.from(_schoolIdsCache);
       return [];
     }
 
-    final ids = decoded.map((e) => e.toString()).where((e) => e.trim().isNotEmpty).toList();
-    _schoolIdsCache = ids;
-    return ids;
+    final configs = decoded.map((e) => e as Map<String, dynamic>).toList();
+    for (final c in configs) {
+      cacheSchoolName(c['id']?.toString() ?? '', c['schoolName']?.toString());
+    }
+    return configs;
   }
 
   static Future<void> ping() async {
@@ -99,55 +127,74 @@ class ApiService {
     }
   }
 
-  static Future<String> _resolveLoginAccountId() async {
-    if (_isValidUuid(Env.defaultAccountId)) {
-      try {
-        final byAccountResponse = await http.get(
-          _uri('/providers/account/${Env.defaultAccountId}'),
-          headers: _headers(),
-        );
+  static Future<void> requestSecurityPin(String identifier) async {
+    final response = await http.post(
+      _securityUri('/login/request-pin'),
+      headers: _headers(withAuth: false),
+      body: json.encode({'identificadorAcceso': identifier}),
+    );
 
-        if (byAccountResponse.statusCode == 200) {
-          return Env.defaultAccountId;
-        }
-      } catch (_) {}
+    if (response.statusCode != 200) {
+      throw Exception(_extractMessage(response));
     }
-
-    try {
-      final response = await http.get(_uri('/providers'), headers: _headers());
-      if (response.statusCode == 200) {
-        final body = json.decode(response.body);
-        final rows = _normalizeListBody(body);
-        if (rows.isNotEmpty) {
-          final dynamic accountId = rows.first['accountId'] ?? rows.first['id_account'];
-          if (accountId != null && _isValidUuid(accountId.toString())) {
-            return accountId.toString();
-          }
-        }
-      }
-    } catch (_) {}
-
-    return '11111111-1111-4111-8111-111111111111';
   }
 
-  static Future<UserProfile?> login(String email, String password) async {
-    final raw = email.trim();
-    if (_isValidUuid(raw)) {
-      return UserProfile(
-        idAccount: raw,
-        email: email,
-        nombre: raw.substring(0, 8),
-        rol: 'DuenoProvider',
-      );
+  static Future<String> loginWithSecurityPin({
+    required String identifier,
+    required String pin,
+  }) async {
+    final response = await http.post(
+      _securityUri('/login'),
+      headers: _headers(withAuth: false),
+      body: json.encode({
+        'identificadorAcceso': identifier,
+        'pinAcceso': pin,
+      }),
+    );
+
+    if (response.statusCode != 200) {
+      throw Exception(_extractMessage(response));
     }
 
-    final resolvedAccountId = await _resolveLoginAccountId();
-    return UserProfile(
-      idAccount: resolvedAccountId,
-      email: email,
-      nombre: email.split('@').first,
-      rol: 'DuenoProvider',
+    final body = json.decode(response.body) as Map<String, dynamic>;
+    final datos = body['datos'] as Map<String, dynamic>? ?? {};
+    final token = datos['tokenApp']?.toString() ?? '';
+    if (token.isEmpty) {
+      throw Exception('Token JWT no recibido desde seguridad');
+    }
+
+    setAccessToken(token);
+    return token;
+  }
+
+  static Future<UserProfile> getSecurityMe() async {
+    final response = await http.get(
+      _securityUri('/me'),
+      headers: _headers(),
     );
+
+    if (response.statusCode != 200) {
+      throw Exception(_extractMessage(response));
+    }
+
+    debugPrint('[ApiService] /me raw response: ${response.body}');
+    final body = json.decode(response.body) as Map<String, dynamic>;
+    return UserProfile.fromSecurityMe(body);
+  }
+
+  static Future<Map<String, dynamic>> getSecurityUserById(String id) async {
+    final response = await http.get(
+      _securityUri('/users/$id'),
+      headers: _headers(),
+    );
+
+    if (response.statusCode != 200) {
+      throw Exception(_extractMessage(response));
+    }
+
+    final body = json.decode(response.body) as Map<String, dynamic>;
+    final datos = body['datos'] as Map<String, dynamic>? ?? {};
+    return datos;
   }
 
   static Future<List<Proveedor>> getMisProveedores(String idAccount) async {
@@ -195,17 +242,26 @@ class ApiService {
     String? direccion,
     String? oficina,
   }) async {
-    final payload = {
-      'accountId': accountId,
-      'name': nombre,
-      'companyRegistration': registro,
+    // Guard: accountId is required by the backend Zod schema
+    if (accountId.trim().isEmpty) {
+      throw Exception('No se puede crear el proveedor: accountId está vacío. Verifica tu sesión.');
+    }
+
+    final optionalFields = <String, String?>{
       'contactEmail': email,
       'contactPhone': telefono,
       'pais': pais,
       'ciudad': ciudad,
       'billingAddress': direccion,
       'oficina': oficina,
-    }..removeWhere((key, value) => value == null || value.trim().isEmpty);
+    }..removeWhere((_, value) => value == null || value.trim().isEmpty);
+
+    final payload = <String, dynamic>{
+      'accountId': accountId,
+      'name': nombre,
+      'companyRegistration': registro,
+      ...optionalFields,
+    };
 
     final response = await http.post(
       _uri('/providers'),
@@ -256,7 +312,7 @@ class ApiService {
   static Future<void> eliminarProveedor(String idProveedor) async {
     final response = await http.delete(
       _uri('/providers/$idProveedor'),
-      headers: _headers(),
+      headers: _headers(hasBody: false),
     );
 
     if (response.statusCode != 200 && response.statusCode != 204) {
@@ -342,7 +398,7 @@ class ApiService {
       }
     } catch (_) {}
 
-    return _mockCafeterias.where((c) => c.idProveedor == providerId).toList();
+        throw Exception('Cafeterias not found for provider: $providerId');
   }
 
   static Future<List<Cafeteria>> getCafeterias() async {
@@ -373,7 +429,7 @@ class ApiService {
       }
     } catch (_) {}
 
-    return List<Cafeteria>.from(_mockCafeterias);
+        throw Exception('Cafeterias not found');
   }
 
   static Future<Cafeteria> crearCafeteria({
@@ -406,14 +462,7 @@ class ApiService {
       }
     } catch (_) {}
 
-    final mock = Cafeteria(
-      idCafeteria: _generateMockUuid(),
-      idColegio: schoolId,
-      idProveedor: providerId,
-      nombreCafeteria: name,
-    );
-    _mockCafeterias.add(mock);
-    return mock;
+    throw Exception('Failed to create Cafeteria');
   }
 
   static Future<void> actualizarCafeteria({
@@ -447,22 +496,14 @@ class ApiService {
       }
     } catch (_) {}
 
-    final idx = _mockCafeterias.indexWhere((c) => c.idCafeteria == idCafeteria);
-    if (idx != -1) {
-      _mockCafeterias[idx] = Cafeteria(
-        idCafeteria: idCafeteria,
-        idColegio: schoolId,
-        idProveedor: providerId,
-        nombreCafeteria: name,
-      );
-    }
+    throw Exception('Failed to update Cafeteria');
   }
 
   static Future<void> eliminarCafeteria(String idCafeteria) async {
     try {
       final response = await http.delete(
         _uri('/cafeterias/$idCafeteria'),
-        headers: _headers(),
+        headers: _headers(hasBody: false),
       );
 
       if (response.statusCode == 200 || response.statusCode == 204 || response.statusCode == 404) {
@@ -471,8 +512,7 @@ class ApiService {
 
       throw Exception(_extractMessage(response));
     } catch (_) {
-      _mockCafeterias.removeWhere((c) => c.idCafeteria == idCafeteria);
-      _mockAssignments.removeWhere((a) => a.cafeteriaId == idCafeteria);
+          throw Exception('Failed to delete Cafeteria');
     }
   }
 
@@ -491,17 +531,7 @@ class ApiService {
       return _normalizeListBody(body);
     }
 
-    return _mockAssignments
-        .where((a) => a.workerId == workerId)
-        .map((a) => {
-              'id': a.id,
-              'workerId': a.workerId,
-              'cafeteriaId': a.cafeteriaId,
-              'role': a.role,
-              'startDate': a.startDate?.toIso8601String(),
-              'endDate': a.endDate?.toIso8601String(),
-            })
-        .toList();
+    throw Exception('Assignments not found for worker: $workerId');
   }
 
   static Future<List<AsignacionTrabajador>> getAssignmentsByWorker(String workerId) async {
@@ -525,12 +555,14 @@ class ApiService {
         return _normalizeListBody(body).map(AsignacionTrabajador.fromJson).toList();
       }
 
-      if (response.statusCode == 400) {
-        throw Exception(_extractMessage(response));
+      throw Exception(_extractMessage(response));
+    } catch (e) {
+      if (e is Exception && !e.toString().contains('Assignments not found')) {
+        rethrow;
       }
-    } catch (_) {}
+    }
 
-    return _mockAssignments.where((a) => a.cafeteriaId == cafeteriaId).toList();
+    throw Exception('Assignments not found for cafeteria: $cafeteriaId');
   }
 
   static Future<AsignacionTrabajador> asignarTrabajadorACafeteria({
@@ -546,9 +578,9 @@ class ApiService {
       'role': role,
       'startDate':
           '${startDate.year.toString().padLeft(4, '0')}-${startDate.month.toString().padLeft(2, '0')}-${startDate.day.toString().padLeft(2, '0')}',
-      'endDate': endDate != null
-          ? '${endDate.year.toString().padLeft(4, '0')}-${endDate.month.toString().padLeft(2, '0')}-${endDate.day.toString().padLeft(2, '0')}'
-          : null,
+      if (endDate != null)
+        'endDate':
+            '${endDate.year.toString().padLeft(4, '0')}-${endDate.month.toString().padLeft(2, '0')}-${endDate.day.toString().padLeft(2, '0')}',
     };
 
     try {
@@ -562,28 +594,21 @@ class ApiService {
         return AsignacionTrabajador.fromJson(json.decode(response.body));
       }
 
-      if (response.statusCode == 400 || response.statusCode == 404) {
-        throw Exception(_extractMessage(response));
+      throw Exception(_extractMessage(response));
+    } catch (e) {
+      if (e is Exception && !e.toString().contains('Failed to assign worker')) {
+        rethrow;
       }
-    } catch (_) {}
+    }
 
-    final mock = AsignacionTrabajador(
-      id: _generateMockUuid(),
-      workerId: workerId,
-      cafeteriaId: cafeteriaId,
-      role: role,
-      startDate: startDate,
-      endDate: endDate,
-    );
-    _mockAssignments.add(mock);
-    return mock;
+    throw Exception('Failed to assign worker to cafeteria');
   }
 
   static Future<void> eliminarAsignacion(String assignmentId) async {
     try {
       final response = await http.delete(
         _uri('/workers/assignments/$assignmentId'),
-        headers: _headers(),
+        headers: _headers(hasBody: false),
       );
 
       if (response.statusCode == 200 || response.statusCode == 204 || response.statusCode == 404) {
@@ -592,7 +617,7 @@ class ApiService {
 
       throw Exception(_extractMessage(response));
     } catch (_) {
-      _mockAssignments.removeWhere((a) => a.id == assignmentId);
+          throw Exception('Failed to delete assignment');
     }
   }
 
@@ -656,6 +681,14 @@ class ApiService {
     DateTime? fechaContratacion,
     double? salario,
   }) async {
+    // Guard: both accountId and providerId are required by the backend
+    if (accountId.trim().isEmpty) {
+      throw Exception('No se puede crear el trabajador: accountId está vacío. Verifica tu sesión.');
+    }
+    if (providerId.trim().isEmpty) {
+      throw Exception('No se puede crear el trabajador: providerId está vacío.');
+    }
+
     final payload = {
       'accountId': accountId,
       'providerId': providerId,
@@ -704,7 +737,7 @@ class ApiService {
   static Future<void> eliminarTrabajador(String idTrabajador) async {
     final response = await http.delete(
       _uri('/workers/$idTrabajador'),
-      headers: _headers(),
+      headers: _headers(hasBody: false),
     );
 
     if (response.statusCode != 200 && response.statusCode != 204 && response.statusCode != 404) {

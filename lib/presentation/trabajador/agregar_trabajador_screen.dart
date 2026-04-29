@@ -1,5 +1,3 @@
-import 'dart:math';
-
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:untitled2/main.dart';
@@ -23,7 +21,6 @@ class AgregarTrabajadorScreen extends StatefulWidget {
 
 class _AgregarTrabajadorScreenState extends State<AgregarTrabajadorScreen>
     with SingleTickerProviderStateMixin {
-  final Random _random = Random();
   late final TabController _tabController;
   final _busquedaCtrl = TextEditingController();
   bool _buscando = false;
@@ -50,32 +47,6 @@ class _AgregarTrabajadorScreenState extends State<AgregarTrabajadorScreen>
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      _setDefaultMockUsuario();
-    });
-  }
-
-  void _setDefaultMockUsuario() {
-    final auth = context.read<AuthProvider>();
-    final profile = auth.effectiveProfile;
-    final accountId = auth.activeAccountId;
-
-    setState(() {
-      _idAccountEncontrado = accountId;
-      _usuarioEncontrado = 'Perfil mock por defecto: ${profile.nombre}\naccountId: $accountId';
-      _busquedaCtrl.text = profile.email;
-    });
-  }
-
-  String _generateMockUuid() {
-    final bytes = List<int>.generate(16, (_) => _random.nextInt(256));
-    bytes[6] = (bytes[6] & 0x0f) | 0x40;
-    bytes[8] = (bytes[8] & 0x3f) | 0x80;
-
-    String hex(int value) => value.toRadixString(16).padLeft(2, '0');
-    final h = bytes.map(hex).join();
-    return '${h.substring(0, 8)}-${h.substring(8, 12)}-${h.substring(12, 16)}-${h.substring(16, 20)}-${h.substring(20, 32)}';
   }
 
   @override
@@ -87,14 +58,14 @@ class _AgregarTrabajadorScreenState extends State<AgregarTrabajadorScreen>
     super.dispose();
   }
 
-  // ── Buscar usuario por email o ID ────────────────────
+  // ── Buscar usuario real en el servicio de seguridad ──
   Future<void> _buscarUsuario() async {
     final query = _busquedaCtrl.text.trim();
-    final auth = context.read<AuthProvider>();
-    final profile = auth.effectiveProfile;
 
     if (query.isEmpty) {
-      _setDefaultMockUsuario();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Ingresa el UUID del usuario a buscar')),
+      );
       return;
     }
 
@@ -104,28 +75,69 @@ class _AgregarTrabajadorScreenState extends State<AgregarTrabajadorScreen>
       _idAccountEncontrado = null;
     });
 
-    await Future.delayed(const Duration(milliseconds: 250));
+    try {
+      final datos = await ApiService.getSecurityUserById(query);
 
-    final isEmail = query.contains('@');
-    final alias = isEmail ? query.split('@').first : query;
-    final generatedAccountId = query == profile.email || query == profile.nombre
-      ? auth.activeAccountId
-      : _generateMockUuid();
+      if (!mounted) return;
 
-    if (!mounted) return;
+      final idUsuario = datos['idUsuario']?.toString() ?? query;
+      final nombre = datos['primerNombre']?.toString() ?? '';
+      final apellido = datos['primerApellido']?.toString() ?? '';
+      final correo = datos['correo']?.toString() ?? '';
+      final celular = datos['celular']?.toString() ?? '';
+      final roles = (datos['roles'] as List?)?.join(', ') ?? '';
+
+      final displayName = [nombre, apellido]
+          .where((s) => s.isNotEmpty)
+          .join(' ');
+
+      final details = <String>[
+        if (displayName.isNotEmpty) displayName,
+        if (correo.isNotEmpty) correo,
+        if (celular.isNotEmpty) 'Tel: $celular',
+        if (roles.isNotEmpty) 'Roles: $roles',
+      ];
+
+      setState(() {
+        _buscando = false;
+        _idAccountEncontrado = idUsuario;
+        _usuarioEncontrado = details.isNotEmpty
+            ? details.join('\n')
+            : 'Usuario encontrado: $idUsuario';
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _buscando = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('No se encontró el usuario: $e'),
+          backgroundColor: AppTheme.danger,
+        ),
+      );
+    }
+  }
+
+  // ── Usar mi propio accountId ────────────────────────
+  void _usarMiCuenta() {
+    final auth = context.read<AuthProvider>();
+    final profile = auth.currentProfile;
+    final accountId = auth.activeAccountId;
+
+    if (accountId.isEmpty || profile == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No hay sesión activa')),
+      );
+      return;
+    }
 
     setState(() {
-      _buscando = false;
-      _idAccountEncontrado = generatedAccountId;
-      _usuarioEncontrado = 'Perfil mock: $alias\naccountId: $generatedAccountId';
+      _idAccountEncontrado = accountId;
+      _usuarioEncontrado =
+          '${profile.nombreCompleto}\n${profile.email ?? profile.phone ?? ''}\nRoles: ${profile.rolLabel}';
+      _busquedaCtrl.text = accountId;
     });
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Mock de seguridad activo: usuario simulado para pruebas.'),
-        backgroundColor: AppTheme.accent,
-      ),
-    );
   }
 
   // ── Vincular el trabajador ───────────────────────────
@@ -186,7 +198,7 @@ class _AgregarTrabajadorScreenState extends State<AgregarTrabajadorScreen>
       lastDate: DateTime.now(),
       builder: (ctx, child) => Theme(
         data: Theme.of(ctx).copyWith(
-          colorScheme: const ColorScheme.light(primary: AppTheme.accent),
+          colorScheme: const ColorScheme.dark(primary: AppTheme.accent, surface: AppTheme.cardBg),
         ),
         child: child!,
       ),
@@ -227,6 +239,7 @@ class _AgregarTrabajadorScreenState extends State<AgregarTrabajadorScreen>
               buscando: _buscando,
               usuarioEncontrado: _usuarioEncontrado,
               onBuscar: _buscarUsuario,
+              onUsarMiCuenta: _usarMiCuenta,
               onSiguiente: _usuarioEncontrado != null
                   ? () => _tabController.animateTo(1)
                   : null,
@@ -259,6 +272,7 @@ class _Tab1BuscarUsuario extends StatelessWidget {
   final bool buscando;
   final String? usuarioEncontrado;
   final VoidCallback onBuscar;
+  final VoidCallback onUsarMiCuenta;
   final VoidCallback? onSiguiente;
 
   const _Tab1BuscarUsuario({
@@ -266,6 +280,7 @@ class _Tab1BuscarUsuario extends StatelessWidget {
     required this.buscando,
     required this.usuarioEncontrado,
     required this.onBuscar,
+    required this.onUsarMiCuenta,
     required this.onSiguiente,
   });
 
@@ -276,10 +291,26 @@ class _Tab1BuscarUsuario extends StatelessWidget {
       children: [
         const SizedBox(height: 8),
         const Text(
-          'Búsqueda mock de seguridad: por defecto usa tu usuario logeado, o busca email/ID para simular otro perfil.',
+          'Busca al usuario por su UUID (proporcionado por el servicio de seguridad) para vincularlo como trabajador.',
           style: TextStyle(color: AppTheme.textSecondary, height: 1.5),
         ),
-        const SizedBox(height: 24),
+        const SizedBox(height: 16),
+
+        // ── Botón usar mi cuenta ───────────────────────
+        OutlinedButton.icon(
+          onPressed: onUsarMiCuenta,
+          icon: const Icon(Icons.person_rounded, size: 18),
+          label: const Text('Usar mi propia cuenta'),
+          style: OutlinedButton.styleFrom(
+            foregroundColor: AppTheme.accent,
+            side: const BorderSide(color: AppTheme.accent),
+            padding: const EdgeInsets.symmetric(vertical: 12),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+          ),
+        ),
+        const SizedBox(height: 20),
 
         // ── Campo de búsqueda ──────────────────────────
         Row(
@@ -287,25 +318,11 @@ class _Tab1BuscarUsuario extends StatelessWidget {
             Expanded(
               child: TextFormField(
                 controller: controller,
-                keyboardType: TextInputType.emailAddress,
-                decoration: InputDecoration(
-                  labelText: 'Email o ID del usuario',
-                  hintText: 'juan@example.com',
-                  prefixIcon: const Icon(Icons.search_rounded,
+                decoration: const InputDecoration(
+                  labelText: 'UUID del usuario',
+                  hintText: '550e8400-e29b-41d4-a716-446655440000',
+                  prefixIcon: Icon(Icons.search_rounded,
                       color: AppTheme.textSecondary),
-                  suffixIcon: buscando
-                      ? const Padding(
-                          padding: EdgeInsets.all(12),
-                          child: SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: AppTheme.accent,
-                            ),
-                          ),
-                        )
-                      : null,
                 ),
                 onFieldSubmitted: (_) => onBuscar(),
               ),
@@ -316,7 +333,16 @@ class _Tab1BuscarUsuario extends StatelessWidget {
               style: ElevatedButton.styleFrom(
                 padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
               ),
-              child: const Icon(Icons.search_rounded),
+              child: buscando
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                  : const Icon(Icons.search_rounded),
             ),
           ],
         ),
@@ -327,16 +353,16 @@ class _Tab1BuscarUsuario extends StatelessWidget {
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: AppTheme.accent.withOpacity(0.08),
+              color: AppTheme.accent.withValues(alpha: 0.08),
               borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: AppTheme.accent.withOpacity(0.3)),
+              border: Border.all(color: AppTheme.accent.withValues(alpha: 0.3)),
             ),
             child: Row(
               children: [
                 Container(
                   width: 44,
                   height: 44,
-                  decoration: BoxDecoration(
+                  decoration: const BoxDecoration(
                     color: AppTheme.accent,
                     shape: BoxShape.circle,
                   ),
@@ -356,7 +382,7 @@ class _Tab1BuscarUsuario extends StatelessWidget {
                         ),
                       ),
                       const Text(
-                        'Usuario simulado (MOCK de Seguridad) ✓',
+                        'Usuario verificado ✓',
                         style: TextStyle(
                           fontSize: 12,
                           color: AppTheme.accent,
@@ -391,12 +417,12 @@ class _Tab1BuscarUsuario extends StatelessWidget {
               children: [
                 const SizedBox(height: 40),
                 Icon(Icons.manage_search_rounded,
-                    size: 56, color: Colors.grey.shade300),
+                    size: 56, color: AppTheme.textSecondary.withValues(alpha: 0.5)),
                 const SizedBox(height: 12),
                 Text(
-                  'Ingresa el email o ID del usuario\nque quieres vincular como trabajador',
+                  'Ingresa el UUID del usuario\nque quieres vincular como trabajador',
                   textAlign: TextAlign.center,
-                  style: TextStyle(color: Colors.grey.shade400, height: 1.5),
+                  style: TextStyle(color: AppTheme.textSecondary, height: 1.5),
                 ),
               ],
             ),
@@ -467,7 +493,7 @@ class _Tab2DatosCargo extends StatelessWidget {
                 color: AppTheme.textSecondary),
             border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
             filled: true,
-            fillColor: Colors.white,
+            fillColor: AppTheme.inputFill,
           ),
           hint: const Text('Selecciona el tipo'),
           items: tiposContrato

@@ -21,6 +21,7 @@ class _EditarTrabajadorScreenState extends State<EditarTrabajadorScreen> {
   late TextEditingController _salarioController;
   
   bool _isLoading = false;
+  String? _nombreTrabajador;
 
   @override
   void initState() {
@@ -29,6 +30,29 @@ class _EditarTrabajadorScreenState extends State<EditarTrabajadorScreen> {
     _cargoController = TextEditingController(text: widget.trabajador.cargoTrabajador);
     _contratoController = TextEditingController(text: widget.trabajador.tipoContratoTrabajador);
     _salarioController = TextEditingController(text: widget.trabajador.salarioTrabajador?.toString() ?? '');
+    _fetchNombreTrabajador();
+  }
+
+  Future<void> _fetchNombreTrabajador() async {
+    try {
+      final datos = await ApiService.getSecurityUserById(widget.trabajador.idAccount);
+      if (!mounted) return;
+      setState(() {
+        final nombre = datos['primerNombre'] ?? '';
+        final apellido = datos['primerApellido'] ?? '';
+        String fullName = '$nombre $apellido'.trim();
+        if (fullName.isEmpty) {
+          fullName = datos['correo'] ?? datos['celular'] ?? '';
+        }
+        _nombreTrabajador = fullName;
+        if (_nombreTrabajador!.isEmpty) _nombreTrabajador = 'Sin nombre';
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _nombreTrabajador = 'Desconocido';
+      });
+    }
   }
 
   @override
@@ -105,10 +129,11 @@ class _EditarTrabajadorScreenState extends State<EditarTrabajadorScreen> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             const Text(
-                              'Datos de Usuario (Lectura)',
+                              'Datos de Usuario',
                               style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                             ),
                             const SizedBox(height: 12),
+                            Text('Nombre: ${_nombreTrabajador ?? 'Cargando...'}'),
                             Text('ID: ${widget.trabajador.idTrabajador}'),
                             Text('Aceptado en: ${widget.trabajador.fechaContratacion?.toLocal().toString().split(" ")[0] ?? "N/A"}'),
                           ],

@@ -16,6 +16,7 @@ class EmpresaDetalleScreen extends StatefulWidget {
 
 class _EmpresaDetalleScreenState extends State<EmpresaDetalleScreen> {
   late Future<List<Trabajador>> _trabajadoresFuture;
+  final Map<String, String> _nombresTrabajadores = {};
 
   @override
   void initState() {
@@ -25,7 +26,21 @@ class _EmpresaDetalleScreenState extends State<EmpresaDetalleScreen> {
 
   void _cargarTrabajadores() {
     setState(() {
-      _trabajadoresFuture = ApiService.getTrabajadoresDeEmpresa(widget.empresa.idProveedor);
+      _trabajadoresFuture = ApiService.getTrabajadoresDeEmpresa(widget.empresa.idProveedor).then((trabajadores) async {
+        final futures = trabajadores.map((t) async {
+          try {
+            final datos = await ApiService.getSecurityUserById(t.idAccount);
+            final nombre = datos['primerNombre'] ?? '';
+            final apellido = datos['primerApellido'] ?? '';
+            final fullName = '$nombre $apellido'.trim();
+            if (fullName.isNotEmpty) {
+              _nombresTrabajadores[t.idTrabajador] = fullName;
+            }
+          } catch (_) {}
+        });
+        await Future.wait(futures);
+        return trabajadores;
+      });
     });
   }
 
@@ -52,8 +67,8 @@ class _EmpresaDetalleScreenState extends State<EmpresaDetalleScreen> {
       await ApiService.eliminarTrabajador(trabajador.idTrabajador);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Trabajador eliminado correctamente'),
+        SnackBar(
+          content: const Text('Trabajador eliminado correctamente'),
           backgroundColor: AppTheme.accent,
         ),
       );
@@ -102,6 +117,10 @@ class _EmpresaDetalleScreenState extends State<EmpresaDetalleScreen> {
                       _InfoRow(icon: Icons.phone_outlined, label: 'Teléfono', value: widget.empresa.telefonoContactoProveedor ?? 'No especificado'),
                       const SizedBox(height: 8),
                       _InfoRow(icon: Icons.location_on_outlined, label: 'Ubicación', value: '${widget.empresa.ciudad ?? ''}, ${widget.empresa.pais ?? ''}'.trim()),
+                      const SizedBox(height: 8),
+                      _InfoRow(icon: Icons.receipt_long_outlined, label: 'Dirección Fact.', value: widget.empresa.direccionFacturacion ?? 'No especificado'),
+                      const SizedBox(height: 8),
+                      _InfoRow(icon: Icons.door_front_door_outlined, label: 'Oficina/Local', value: widget.empresa.oficina ?? 'No especificado'),
                       const SizedBox(height: 12),
                       SizedBox(
                         width: double.infinity,
@@ -115,7 +134,7 @@ class _EmpresaDetalleScreenState extends State<EmpresaDetalleScreen> {
                             );
                           },
                           icon: const Icon(Icons.coffee_rounded),
-                          label: const Text('Gestionar cafeterías (en colegios)'),
+                          label: const Text('Gestionar cafeterías'),
                         ),
                       ),
                     ],
@@ -142,12 +161,7 @@ class _EmpresaDetalleScreenState extends State<EmpresaDetalleScreen> {
             builder: (context, snapshot) {
               if (snapshot.connectionState == ConnectionState.waiting) {
                 return const SliverFillRemaining(
-                  child: Center(
-                    child: Padding(
-                      padding: EdgeInsets.all(32.0),
-                      child: CircularProgressIndicator(),
-                    ),
-                  ),
+                  child: Center(child: CircularProgressIndicator()),
                 );
               } else if (snapshot.hasError) {
                 return SliverFillRemaining(
@@ -174,15 +188,13 @@ class _EmpresaDetalleScreenState extends State<EmpresaDetalleScreen> {
                         clipBehavior: Clip.antiAlias,
                         child: ListTile(
                           onTap: () async {
-                            final bool? update = await Navigator.push(
+                            final update = await Navigator.push<bool>(
                               context,
                               MaterialPageRoute(
                                 builder: (_) => EditarTrabajadorScreen(trabajador: trabajador),
                               ),
                             );
-                            if (update == true) {
-                              _cargarTrabajadores(); // Refrescar lista
-                            }
+                            if (update == true) _cargarTrabajadores();
                           },
                           leading: CircleAvatar(
                             backgroundColor: Color(trabajador.estadoEmpleo.colorValue).withValues(alpha: 0.2),
@@ -192,16 +204,17 @@ class _EmpresaDetalleScreenState extends State<EmpresaDetalleScreen> {
                             ),
                           ),
                           title: Text(
-                            trabajador.cargoTrabajador ?? 'Trabajador sin cargo',
-                            style: const TextStyle(fontWeight: FontWeight.w600),
+                            _nombresTrabajadores[trabajador.idTrabajador] ?? 'Cargando nombre...',
+                            style: const TextStyle(fontWeight: FontWeight.w600, color: AppTheme.textPrimary),
                           ),
                           subtitle: Text(
-                            'Contrato: ${trabajador.tipoContratoTrabajador ?? "No especificado"}\nID: ${trabajador.idTrabajador.substring(0, 8)}...',
+                            'Cargo: ${trabajador.cargoTrabajador ?? "No especificado"}\nContrato: ${trabajador.tipoContratoTrabajador ?? "No especificado"}',
+                            style: const TextStyle(color: AppTheme.textSecondary),
                           ),
                           trailing: PopupMenuButton<String>(
                             onSelected: (v) async {
                               if (v == 'editar') {
-                                final bool? update = await Navigator.push(
+                                final update = await Navigator.push<bool>(
                                   context,
                                   MaterialPageRoute(
                                     builder: (_) => EditarTrabajadorScreen(trabajador: trabajador),
@@ -213,26 +226,22 @@ class _EmpresaDetalleScreenState extends State<EmpresaDetalleScreen> {
                                 _eliminarTrabajador(trabajador);
                               }
                             },
-                            itemBuilder: (_) => [
-                              const PopupMenuItem<String>(
+                            itemBuilder: (_) => const [
+                              PopupMenuItem<String>(
                                 value: 'editar',
-                                child: Row(
-                                  children: [
-                                    Icon(Icons.edit_rounded, size: 18),
-                                    SizedBox(width: 8),
-                                    Text('Editar'),
-                                  ],
-                                ),
+                                child: Row(children: [
+                                  Icon(Icons.edit_rounded, size: 18),
+                                  SizedBox(width: 8),
+                                  Text('Editar'),
+                                ]),
                               ),
-                              const PopupMenuItem<String>(
+                              PopupMenuItem<String>(
                                 value: 'eliminar',
-                                child: Row(
-                                  children: [
-                                    Icon(Icons.delete_rounded, size: 18, color: AppTheme.danger),
-                                    SizedBox(width: 8),
-                                    Text('Eliminar', style: TextStyle(color: AppTheme.danger)),
-                                  ],
-                                ),
+                                child: Row(children: [
+                                  Icon(Icons.delete_rounded, size: 18, color: AppTheme.danger),
+                                  SizedBox(width: 8),
+                                  Text('Eliminar', style: TextStyle(color: AppTheme.danger)),
+                                ]),
                               ),
                             ],
                           ),
@@ -257,11 +266,7 @@ class _InfoRow extends StatelessWidget {
   final String label;
   final String value;
 
-  const _InfoRow({
-    required this.icon,
-    required this.label,
-    required this.value,
-  });
+  const _InfoRow({required this.icon, required this.label, required this.value});
 
   @override
   Widget build(BuildContext context) {
@@ -272,17 +277,12 @@ class _InfoRow extends StatelessWidget {
         const SizedBox(width: 8),
         Text(
           '$label: ',
-          style: const TextStyle(
-            color: AppTheme.textSecondary,
-            fontWeight: FontWeight.w500,
-          ),
+          style: const TextStyle(color: AppTheme.textSecondary, fontWeight: FontWeight.w500),
         ),
         Expanded(
           child: Text(
             value,
-            style: const TextStyle(
-              color: AppTheme.textPrimary,
-            ),
+            style: const TextStyle(color: AppTheme.textPrimary),
             overflow: TextOverflow.ellipsis,
           ),
         ),
