@@ -1,19 +1,20 @@
-# INFORME APLICACIÓN CLIENTE — FRONTEND FLUTTER
+# Pay School Snacks Providers App
 
 | Campo | Valor |
 |---|---|
-| **Nombre** | Pay School Snacks Providers App (Frontend) |
+| **Nombre** | Pay School Snacks Providers App |
 | **Descripción** | Aplicación móvil para la gestión de proveedores, cafeterías y vinculación de trabajadores. |
 | **Versión** | 1.0.0 |
-| **Entorno** | Desarrollo / Producción |
-| **Bounded Context** | Interfaz de Usuario y Orquestación de API |
-| **Framework** | Flutter (Dart) |
+| **Entorno** | Android / iOS (Flutter) |
+| **Bounded Context** | Interfaz de Usuario y Orquestación de API para Proveedores |
+| **Integrantes** | Jean Vides, Luis Rincon, Santiago Criollo |
+| **Repositorio** | (Repositorio interno) |
 
 ---
 
 ## 1. Propósito y Alcance
 
-El frontend de "Pay School Snacks Providers App" sirve como el punto de acceso para los usuarios (proveedores y trabajadores) al sistema de gestión. Permite la administración de empresas proveedoras, la creación de cafeterías dentro de colegios y la vinculación de trabajadores.
+La plataforma **Pay School Snacks** es un ecosistema amplio. Esta aplicación, **Pay School Snacks Providers App**, abarca únicamente una pequeña parte de ese ecosistema: somos la interfaz oficial para la gestión de los proveedores. Sirve como el punto de acceso exclusivo para que usuarios (proveedores y trabajadores) interactúen con el sistema de gestión. Permite la administración de empresas proveedoras, la creación de cafeterías dentro de colegios y la vinculación de trabajadores.
 
 **Casos de uso principales:**
 - **Proveedores:** Registrar su empresa, crear cafeterías, y vincular trabajadores a dichas cafeterías.
@@ -118,10 +119,4 @@ El frontend refleja estrictamente el contrato establecido por el `provider-servi
 2.  **Ubicaciones:** Los campos `pais`, `ciudad`, `direccion_facturacion` y `oficina` se mapean fielmente desde los formularios hasta la API, completando la estructura de datos del proveedor.
 3.  **Identidad Consolidada:** Se resolvieron discrepancias de ID. El frontend extrae el `idAccount` verídico desde la respuesta del servicio de seguridad (`/me`) y lo utiliza para todas las operaciones (ej. `getMisProveedores(idAccount)` y `getEmpleosPorCuenta(idAccount)`).
 
----
 
-## 7. Próximos Pasos
-
-*   **Caché Local:** Evaluar la implementación de un paquete como `shared_preferences` para almacenar temporalmente la última respuesta del backend y permitir visualización offline mientras se actualizan los datos.
-*   **Validaciones en Frontend:** Migrar ciertas reglas de validación (ej. formato de email) a la capa UI (con `FormState`) antes de enviar el request, ahorrando llamadas de red innecesarias.
-*   **Gestión de Errores Específica:** Diferenciar entre errores `404` (No encontrado) y `500` (Error de servidor) para mostrar mensajes UI adaptados ("Parece que no tienes empresas" vs "Problemas de conexión con el servidor").
